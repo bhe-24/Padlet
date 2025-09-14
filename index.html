@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Papan Diskusi Kelas - Cendekia Aksara</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;700&display=swap');
+        :root { --primary: #003366; --secondary: #005a9c; --accent: #f0f4f8; --wall-bg: #e9ebee; --note-bg: #fff7d1;}
+        body { font-family: 'Poppins', sans-serif; background-color: var(--accent); margin: 0; }
+        .container { max-width: 400px; margin: 20px auto; background: #fff; padding: 30px; border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.1); }
+        h1, h2 { color: var(--primary); text-align: center; }
+        .hidden { display: none !important; }
+        .form-group { margin-bottom: 20px; text-align: left; }
+        .form-group label { display: block; font-weight: 600; margin-bottom: 8px; }
+        .form-group input, .form-group textarea { width: 100%; padding: 12px; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; }
+        .btn { width: 100%; padding: 12px; border: none; border-radius: 8px; color: #fff; background-color: var(--secondary); font-weight: 600; cursor: pointer; transition: background-color 0.2s; }
+        .btn:disabled { background-color: #6c757d; cursor: not-allowed; }
+        
+        .discussion-header { background-color: #fff; padding: 15px 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center; }
+        .discussion-topic { background-color: var(--primary); color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        .discussion-topic h2 { color: white; margin: 0 0 10px; }
+        .discussion-topic p { margin: 0; text-align: center; }
+        
+        #discussion-wall { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; padding: 30px; background-color: var(--wall-bg); }
+        .answer-card { background-color: var(--note-bg); padding: 15px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); word-wrap: break-word; }
+        .answer-card p { margin: 0; font-size: 0.95em; line-height: 1.6; color: #444; white-space: pre-wrap; text-align:left; }
+        .answer-card .author { margin-top: 15px; font-size: 0.8em; font-weight: 500; text-align: right; color: #555; }
+
+        .action-button { position: fixed; bottom: 30px; right: 30px; width: 60px; height: 60px; background-color: var(--secondary); color: white; border-radius: 50%; border: none; font-size: 36px; cursor: pointer; box-shadow: 0 4px 15px rgba(0,90,156,0.4); }
+        .end-session-btn { position: fixed; top: 20px; right: 20px; background: #dc3545; color: white; border: none; padding: 10px 15px; border-radius: 8px; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <div id="login-view" class="view">
+        <div class="container">
+            <h1>Papan Diskusi Kelas</h1><p>Silakan masuk untuk melanjutkan.</p>
+            <form id="login-form">
+                <div class="form-group"><label for="username">Username</label><input type="text" id="username" required></div>
+                <div class="form-group"><label for="password">Password</label><input type="password" id="password" required></div>
+                <button type="submit" class="btn">Login</button>
+            </form>
+        </div>
+    </div>
+    
+    <div id="main-view" class="view hidden">
+        <div class="discussion-header">
+            <h1 id="header-title">Memuat Sesi...</h1>
+        </div>
+        <div id="pengajar-start-view" class="container hidden">
+            <h2>Mulai Sesi Diskusi Baru</h2>
+            <form id="start-session-form">
+                <div class="form-group"><label for="judul-topik">Judul Topik</label><input type="text" id="judul-topik" required></div>
+                <div class="form-group"><label for="pertanyaan">Pertanyaan / Pemicu Diskusi</label><textarea id="pertanyaan" rows="4" required></textarea></div>
+                <button type="submit" class="btn">Mulai Sesi</button>
+            </form>
+        </div>
+        <div id="siswa-wait-view" class="container hidden">
+            <h2>Menunggu Sesi</h2>
+            <p>Belum ada sesi diskusi yang dimulai oleh pengajar. Halaman ini akan diperbarui secara otomatis.</p>
+        </div>
+        <div id="discussion-wall"></div>
+        <button id="add-answer-btn" class="action-button hidden">+</button>
+        <button id="end-session-btn" class="end-session-btn hidden">AKHIRI SESI</button>
+    </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxwljewwYoclmEbPhu2YCaCUoBCUrVB_JgzZjqOng1zN8gL6dFVE7tS0ITyeD0iCUd9Cg/exec'; // <-- Jangan lupa ganti URL ini
+    let currentUser = {};
+    let sessionInterval;
+
+    const views = document.querySelectorAll('.view');
+    function updateView(targetId) { views.forEach(v => v.classList.add('hidden')); document.getElementById(targetId).classList.remove('hidden'); }
+
+    // --- LOGIN ---
+    document.getElementById('login-form').onsubmit = e => {
+        e.preventDefault();
+        const username = document.getElementById('username').value, password = document.getElementById('password').value;
+        const btn = e.target.querySelector('button');
+        btn.disabled = true;
+        btn.textContent = "Mencoba Masuk...";
+
+        const formData = new FormData();
+        formData.append('username', username);
+        formData.append('password', password);
+
+        fetch(`${WEB_APP_URL}?action=login`, { method: 'POST', body: formData })
+        .then(res => res.json()).then(data => {
+            if (data.status === 'success') {
+                currentUser = { name: data.name, role: data.role.trim().toLowerCase() };
+                updateView('main-view');
+                startSessionChecker();
+            } else { 
+                alert("Login gagal. Periksa kembali username dan password."); 
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            alert("Terjadi kesalahan. Pastikan URL Web App sudah benar dan script sudah di-deploy ulang.");
+        })
+        .finally(() => {
+            btn.disabled = false;
+            btn.textContent = "Login";
+        });
+    };
+    
+    // --- LOGIKA UTAMA ---
+    function startSessionChecker() {
+        fetchSessionState();
+        if (sessionInterval) clearInterval(sessionInterval);
+        sessionInterval = setInterval(fetchSessionState, 10000); // Refresh setiap 10 detik
+    }
+
+    async function fetchSessionState() {
+        try {
+            const response = await fetch(`${WEB_APP_URL}?action=getSessionState`);
+            const state = await response.json();
+            renderMainView(state);
+        } catch (error) { console.error("Gagal mengambil status sesi:", error); }
+    }
+
+    function renderMainView(state) {
+        const wall = document.getElementById('discussion-wall');
+        wall.innerHTML = ''; // Selalu bersihkan wall setiap refresh
+
+        if (state.session) {
+            document.getElementById('header-title').textContent = state.session.JudulTopik;
+            document.getElementById('pengajar-start-view').classList.add('hidden');
+            document.getElementById('siswa-wait-view').classList.add('hidden');
+            
+            const topicCard = document.createElement('div');
+            topicCard.className = 'discussion-topic';
+            topicCard.innerHTML = `<h2>${state.session.JudulTopik}</h2><p>${state.session.Pertanyaan}</p><p style="font-size:0.8em; margin-top:10px;">Dimulai oleh: ${state.session.NamaPengajar}</p>`;
+            wall.appendChild(topicCard);
+            
+            state.answers.forEach(ans => {
+                if (ans.ID_Sesi === state.session.ID_Sesi) {
+                    const answerCard = document.createElement('div');
+                    answerCard.className = 'answer-card';
+                    answerCard.innerHTML = `<p></p><p class="author"></p>`;
+                    answerCard.querySelector('p').textContent = ans.Jawaban;
+                    answerCard.querySelector('.author').textContent = `— ${ans.UsernameSiswa}`;
+                    wall.appendChild(answerCard);
+                }
+            });
+
+            if (currentUser.role === 'pengajar') {
+                document.getElementById('end-session-btn').classList.remove('hidden');
+                document.getElementById('add-answer-btn').classList.add('hidden');
+            } else {
+                document.getElementById('end-session-btn').classList.add('hidden');
+                document.getElementById('add-answer-btn').classList.remove('hidden');
+            }
+        } 
+        else {
+            document.getElementById('header-title').textContent = "Papan Diskusi Kelas";
+            document.getElementById('end-session-btn').classList.add('hidden');
+            document.getElementById('add-answer-btn').classList.add('hidden');
+            if (currentUser.role === 'pengajar') {
+                document.getElementById('pengajar-start-view').classList.remove('hidden');
+                document.getElementById('siswa-wait-view').classList.add('hidden');
+            } else {
+                document.getElementById('pengajar-start-view').classList.add('hidden');
+                document.getElementById('siswa-wait-view').classList.remove('hidden');
+            }
+        }
+    }
+
+    // --- AKSI PENGGUNA ---
+    document.getElementById('start-session-form').onsubmit = e => {
+        e.preventDefault();
+        const formData = new FormData();
+        formData.append('JudulTopik', document.getElementById('judul-topik').value);
+        formData.append('Pertanyaan', document.getElementById('pertanyaan').value);
+        formData.append('NamaPengajar', currentUser.name);
+        fetch(`${WEB_APP_URL}?action=startSession`, { method: 'POST', body: formData })
+        .then(() => fetchSessionState());
+    };
+
+    document.getElementById('add-answer-btn').onclick = () => {
+        const answer = prompt("Tuliskan jawaban atau ide Anda:");
+        if (answer && answer.trim() !== '') {
+            const formData = new FormData();
+            formData.append('UsernameSiswa', currentUser.name);
+            formData.append('Jawaban', answer);
+            fetch(`${WEB_APP_URL}?action=postAnswer`, { method: 'POST', body: formData })
+            .then(() => fetchSessionState());
+        }
+    };
+
+    document.getElementById('end-session-btn').onclick = () => {
+        if (confirm("Apakah Anda yakin ingin mengakhiri sesi ini? Semua jawaban akan dihapus.")) {
+            fetch(`${WEB_APP_URL}?action=endSession`, { method: 'POST' })
+            .then(() => fetchSessionState());
+        }
+    };
+});
+</script>
+</body>
+</html>
