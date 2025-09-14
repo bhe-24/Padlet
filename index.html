@@ -24,11 +24,18 @@
         
         #discussion-wall { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; padding: 30px; background-color: var(--wall-bg); }
         .answer-card { background-color: var(--note-bg); padding: 15px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); word-wrap: break-word; }
-        .answer-card p { margin: 0; font-size: 0.95em; line-height: 1.6; color: #444; white-space: pre-wrap; text-align:left; }
-        .answer-card .author { margin-top: 15px; font-size: 0.8em; font-weight: 500; text-align: right; color: #555; }
+        /* --- CSS BARU UNTUK FORMAT KARTU JAWABAN --- */
+        .answer-card .author-name { font-weight: 700; text-transform: uppercase; color: var(--primary); margin-bottom: 2px; text-align: left; }
+        .answer-card .timestamp { font-size: 0.75em; color: #666; margin-bottom: 10px; text-align: left; }
+        .answer-card .answer-content { font-size: 0.95em; line-height: 1.6; color: #444; white-space: pre-wrap; text-align: left; }
 
-        .action-button { position: fixed; bottom: 30px; right: 30px; width: 60px; height: 60px; background-color: var(--secondary); color: white; border-radius: 50%; border: none; font-size: 36px; cursor: pointer; box-shadow: 0 4px 15px rgba(0,90,156,0.4); }
-        .end-session-btn { position: fixed; top: 20px; right: 20px; background: #dc3545; color: white; border: none; padding: 10px 15px; border-radius: 8px; cursor: pointer; font-weight: bold; }
+        .action-button { position: fixed; bottom: 30px; right: 30px; width: 60px; height: 60px; background-color: var(--secondary); color: white; border-radius: 50%; border: none; font-size: 36px; cursor: pointer; box-shadow: 0 4px 15px rgba(0,90,156,0.4); z-index: 10; }
+        .end-session-btn { position: fixed; top: 20px; right: 20px; background: #dc3545; color: white; border: none; padding: 10px 15px; border-radius: 8px; cursor: pointer; font-weight: bold; z-index: 10;}
+        
+        /* --- CSS BARU UNTUK POP-UP LOADING --- */
+        #loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; }
+        .loading-box { background: #fff; color: var(--primary); padding: 20px 40px; border-radius: 12px; text-align: center; }
+        .loading-box p { font-weight: 600; }
     </style>
 </head>
 <body>
@@ -45,9 +52,7 @@
     </div>
     
     <div id="main-view" class="view hidden">
-        <div class="discussion-header">
-            <h1 id="header-title">Memuat Sesi...</h1>
-        </div>
+        <div class="discussion-header"><h1 id="header-title">Memuat Sesi...</h1></div>
         <div id="pengajar-start-view" class="container hidden">
             <h2>Mulai Sesi Diskusi Baru</h2>
             <form id="start-session-form">
@@ -65,26 +70,55 @@
         <button id="end-session-btn" class="end-session-btn hidden">AKHIRI SESI</button>
     </div>
 
+    <div id="loading-overlay" class="hidden">
+        <div class="loading-box">
+            <p id="loading-text">Loading...</p>
+        </div>
+    </div>
+
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-    const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxwljewwYoclmEbPhu2YCaCUoBCUrVB_JgzZjqOng1zN8gL6dFVE7tS0ITyeD0iCUd9Cg/exec'; // <-- Jangan lupa ganti URL ini
+    const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxwljewwYoclmEbPhu2YCaCUoBCUrVB_JgzZjqOng1zN8gL6dFVE7tS0ITyeD0iCUd9Cg/exec';
     let currentUser = {};
     let sessionInterval;
 
     const views = document.querySelectorAll('.view');
+    const loadingOverlay = document.getElementById('loading-overlay');
+    const loadingText = document.getElementById('loading-text');
+
     function updateView(targetId) { views.forEach(v => v.classList.add('hidden')); document.getElementById(targetId).classList.remove('hidden'); }
+    function showLoading(message) { loadingText.textContent = message; loadingOverlay.classList.remove('hidden'); }
+    function hideLoading() { loadingOverlay.classList.add('hidden'); }
+
+    // --- FUNGSI BARU UNTUK MENGHITUNG DURASI ---
+    function timeAgo(dateString) {
+        const now = new Date();
+        const past = new Date(dateString);
+        const seconds = Math.floor((now - past) / 1000);
+
+        let interval = seconds / 31536000;
+        if (interval > 1) return Math.floor(interval) + " tahun yang lalu";
+        interval = seconds / 2592000;
+        if (interval > 1) return Math.floor(interval) + " bulan yang lalu";
+        interval = seconds / 86400;
+        if (interval > 1) return Math.floor(interval) + " hari yang lalu";
+        interval = seconds / 3600;
+        if (interval > 1) return Math.floor(interval) + " jam yang lalu";
+        interval = seconds / 60;
+        if (interval > 1) return Math.floor(interval) + " menit yang lalu";
+        return "beberapa detik yang lalu";
+    }
 
     // --- LOGIN ---
     document.getElementById('login-form').onsubmit = e => {
         e.preventDefault();
-        const username = document.getElementById('username').value, password = document.getElementById('password').value;
         const btn = e.target.querySelector('button');
         btn.disabled = true;
         btn.textContent = "Mencoba Masuk...";
 
         const formData = new FormData();
-        formData.append('username', username);
-        formData.append('password', password);
+        formData.append('username', document.getElementById('username').value);
+        formData.append('password', document.getElementById('password').value);
 
         fetch(`${WEB_APP_URL}?action=login`, { method: 'POST', body: formData })
         .then(res => res.json()).then(data => {
@@ -92,9 +126,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentUser = { name: data.name, role: data.role.trim().toLowerCase() };
                 updateView('main-view');
                 startSessionChecker();
-            } else { 
-                alert("Login gagal. Periksa kembali username dan password."); 
-            }
+            } else { alert("Login gagal. Periksa kembali username dan password."); }
         })
         .catch(err => {
             console.error(err);
@@ -110,7 +142,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function startSessionChecker() {
         fetchSessionState();
         if (sessionInterval) clearInterval(sessionInterval);
-        sessionInterval = setInterval(fetchSessionState, 10000); // Refresh setiap 10 detik
+        sessionInterval = setInterval(fetchSessionState, 10000);
     }
 
     async function fetchSessionState() {
@@ -123,7 +155,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderMainView(state) {
         const wall = document.getElementById('discussion-wall');
-        wall.innerHTML = ''; // Selalu bersihkan wall setiap refresh
+        wall.innerHTML = ''; 
 
         if (state.session) {
             document.getElementById('header-title').textContent = state.session.JudulTopik;
@@ -135,13 +167,20 @@ document.addEventListener('DOMContentLoaded', () => {
             topicCard.innerHTML = `<h2>${state.session.JudulTopik}</h2><p>${state.session.Pertanyaan}</p><p style="font-size:0.8em; margin-top:10px;">Dimulai oleh: ${state.session.NamaPengajar}</p>`;
             wall.appendChild(topicCard);
             
+            // --- Logika Render Kartu Jawaban Diperbarui ---
+            state.answers.sort((a, b) => new Date(b.Timestamp) - new Date(a.Timestamp)); // Urutkan dari terbaru
             state.answers.forEach(ans => {
                 if (ans.ID_Sesi === state.session.ID_Sesi) {
                     const answerCard = document.createElement('div');
                     answerCard.className = 'answer-card';
-                    answerCard.innerHTML = `<p></p><p class="author"></p>`;
-                    answerCard.querySelector('p').textContent = ans.Jawaban;
-                    answerCard.querySelector('.author').textContent = `— ${ans.UsernameSiswa}`;
+                    answerCard.innerHTML = `
+                        <div class="author-name"></div>
+                        <div class="timestamp"></div>
+                        <p class="answer-content"></p>
+                    `;
+                    answerCard.querySelector('.author-name').textContent = ans.UsernameSiswa.toUpperCase();
+                    answerCard.querySelector('.timestamp').textContent = timeAgo(ans.Timestamp);
+                    answerCard.querySelector('.answer-content').textContent = ans.Jawaban;
                     wall.appendChild(answerCard);
                 }
             });
@@ -171,29 +210,35 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- AKSI PENGGUNA ---
     document.getElementById('start-session-form').onsubmit = e => {
         e.preventDefault();
+        showLoading('Sesi sedang dimulai...');
         const formData = new FormData();
         formData.append('JudulTopik', document.getElementById('judul-topik').value);
         formData.append('Pertanyaan', document.getElementById('pertanyaan').value);
         formData.append('NamaPengajar', currentUser.name);
         fetch(`${WEB_APP_URL}?action=startSession`, { method: 'POST', body: formData })
-        .then(() => fetchSessionState());
+        .then(() => fetchSessionState())
+        .finally(() => hideLoading());
     };
 
     document.getElementById('add-answer-btn').onclick = () => {
         const answer = prompt("Tuliskan jawaban atau ide Anda:");
         if (answer && answer.trim() !== '') {
+            showLoading('Jawaban sedang dikirim...');
             const formData = new FormData();
             formData.append('UsernameSiswa', currentUser.name);
             formData.append('Jawaban', answer);
             fetch(`${WEB_APP_URL}?action=postAnswer`, { method: 'POST', body: formData })
-            .then(() => fetchSessionState());
+            .then(() => fetchSessionState())
+            .finally(() => hideLoading());
         }
     };
 
     document.getElementById('end-session-btn').onclick = () => {
         if (confirm("Apakah Anda yakin ingin mengakhiri sesi ini? Semua jawaban akan dihapus.")) {
+            showLoading('Sesi sedang diakhiri...');
             fetch(`${WEB_APP_URL}?action=endSession`, { method: 'POST' })
-            .then(() => fetchSessionState());
+            .then(() => fetchSessionState())
+            .finally(() => hideLoading());
         }
     };
 });
